@@ -77,7 +77,33 @@ function saveData(data) {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+// Configuración CORS explícita
+const whitelist = [
+    "http://localhost:3000",
+    "http://127.0.0.1:5500", // VS Code Live Server
+    "https://wquiceno1.github.io" // GitHub Pages
+];
+
+const corsOptions = {
+    origin: function (origin, callback) {
+        // Permitir peticiones sin origen (como apps móviles o curl)
+        if (!origin) return callback(null, true);
+        
+        if (whitelist.indexOf(origin) !== -1 || origin.includes("github.io")) {
+            callback(null, true);
+        } else {
+            console.warn("Bloqueado por CORS:", origin);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+    optionsSuccessStatus: 204
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // Habilitar pre-flight explícito
 app.use(express.json());
 
 // Healthcheck simple
