@@ -192,6 +192,41 @@ app.post("/api/test-notification", async (req, res) => {
     }
 });
 
+// GET /api/debug/send-last
+// Envía notificación al dispositivo más recientemente actualizado
+app.get("/api/debug/send-last", async (req, res) => {
+    if (!messaging) {
+        return res.status(503).json({ error: "Firebase no inicializado" });
+    }
+    
+    const data = loadData();
+    if (!data.devices || data.devices.length === 0) {
+        return res.status(404).json({ error: "No hay dispositivos registrados" });
+    }
+
+    // Buscar el más reciente
+    const lastDevice = data.devices.sort((a, b) => 
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    )[0];
+
+    const message = {
+        token: lastDevice.token,
+        notification: {
+            title: "Prueba de Integración",
+            body: `Hola! Esta notificación confirma que el flujo Backend -> Firebase -> PWA funciona. Hora: ${new Date().toLocaleTimeString()}`
+        }
+    };
+
+    try {
+        const response = await messaging.send(message);
+        console.log("Notificación enviada a último dispositivo:", response);
+        res.json({ ok: true, messageId: response, target: lastDevice.token.substring(0, 10) + "..." });
+    } catch (err) {
+        console.error("Error enviando:", err);
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
 
 // Arrancar servidor
 app.listen(PORT, () => {
