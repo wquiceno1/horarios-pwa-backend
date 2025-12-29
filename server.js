@@ -284,6 +284,16 @@ async function checkAndNotify() {
             const endMinutes = endH * 60 + endM;
             
             const isFirstBlock = index === 0;
+            
+            // Helper formato 12h
+            const format12h = (h, m) => {
+                const ampm = h >= 12 ? 'PM' : 'AM';
+                const hour12 = h % 12 || 12;
+                return `${hour12}:${m.toString().padStart(2, '0')} ${ampm}`;
+            };
+            
+            const startTime12 = format12h(startH, startM);
+            const endTime12 = format12h(endH, endM);
 
             // --- EVENTOS DE INICIO ---
             
@@ -292,7 +302,7 @@ async function checkAndNotify() {
                 console.log(`⏰ Pre-aviso inicio: ${block.entity}`);
                 await sendBroadcast(
                     `Próximo turno: ${block.entity}`,
-                    `En ${PRE_NOTIFICATION_MINUTES} min inicia labores en ${block.entity} (${block.start})`
+                    `En ${PRE_NOTIFICATION_MINUTES} min inicia labores en ${block.entity} (${startTime12})`
                 );
             }
 
@@ -302,7 +312,7 @@ async function checkAndNotify() {
                 const title = isFirstBlock ? "☀️ ¡Buen día! Inicio de Jornada" : `▶️ Inicia turno: ${block.entity}`;
                 await sendBroadcast(
                     title,
-                    `Es hora de comenzar en ${block.entity} (${block.start})`
+                    `Es hora de comenzar en ${block.entity} (${startTime12})`
                 );
             }
 
@@ -322,7 +332,7 @@ async function checkAndNotify() {
                 console.log(`⏰ Fin turno: ${block.entity}`);
                 await sendBroadcast(
                     `⏹️ Finaliza turno: ${block.entity}`,
-                    `Has completado el bloque de ${block.entity} (${block.end})`
+                    `Has completado el bloque de ${block.entity} (${endTime12})`
                 );
             }
         });
