@@ -4,14 +4,14 @@
     "description": "Horarios de trabajo ajustados al cambio de hora de Chile",
     "seasons": {
       "summer_chile": {
-        "name": "Septiembre a Abril (Chile +1)",
-        "description": "Horario de verano en Chile. Diferencia +1h.",
+        "name": "Septiembre a Abril (Verano Chile)",
+        "description": "Diferencia +2h. Entrada más temprana.",
         "rule_start": { "month": 9, "weekday": 6, "occurrence": 1 }, 
         "rule_end": { "month": 4, "weekday": 6, "occurrence": 1 }
       },
       "winter_chile": {
-        "name": "Abril a Septiembre (Chile +2)",
-        "description": "Horario de invierno en Chile. Diferencia +2h. (Horario Default)",
+        "name": "Abril a Septiembre (Invierno Chile)",
+        "description": "Diferencia +1h. Entrada más tarde.",
         "is_default": true
       }
     }
@@ -19,22 +19,22 @@
   "schedules": {
     "summer_chile": {
       "monday_to_thursday": [
-        { "entity": "SURA", "start": "08:00", "end": "12:15" },
-        { "entity": "ILOGICA", "start": "12:15", "end": "17:30" }
-      ],
-      "friday": [
-        { "entity": "SURA", "start": "08:00", "end": "11:15" },
-        { "entity": "ILOGICA", "start": "11:15", "end": "15:30" }
-      ]
-    },
-    "winter_chile": {
-      "monday_to_thursday": [
         { "entity": "SURA", "start": "07:00", "end": "11:15" },
         { "entity": "ILOGICA", "start": "11:15", "end": "16:30" }
       ],
       "friday": [
         { "entity": "SURA", "start": "07:00", "end": "10:15" },
         { "entity": "ILOGICA", "start": "10:15", "end": "14:30" }
+      ]
+    },
+    "winter_chile": {
+      "monday_to_thursday": [
+        { "entity": "SURA", "start": "08:00", "end": "12:15" },
+        { "entity": "ILOGICA", "start": "12:15", "end": "17:30" }
+      ],
+      "friday": [
+        { "entity": "SURA", "start": "08:00", "end": "11:15" },
+        { "entity": "ILOGICA", "start": "11:15", "end": "15:30" }
       ]
     }
   }
