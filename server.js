@@ -147,6 +147,18 @@ app.post("/api/save-token", (req, res) => {
     res.json({ ok: true, message: "Token guardado correctamente" });
 });
 
+// GET /api/schedule/today
+// Devuelve el horario calculado para el día actual
+app.get("/api/schedule/today", (req, res) => {
+    try {
+        const schedule = getTodaySchedule();
+        res.json({ ok: true, data: schedule });
+    } catch (error) {
+        console.error("Error obteniendo horario:", error);
+        res.status(500).json({ ok: false, error: "Error interno calculando horario" });
+    }
+});
+
 // POST /api/test-notification
 // body: { fcmToken: string, title?: string, body?: string }
 app.post("/api/test-notification", async (req, res) => {
