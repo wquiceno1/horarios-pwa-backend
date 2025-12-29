@@ -241,6 +241,126 @@ app.get("/api/debug/send-last", async (req, res) => {
 });
 
 
+// --- CRON JOB / INTERVALO PARA NOTIFICACIONES ---
+// Chequear cada minuto eventos de horario
+const PRE_NOTIFICATION_MINUTES = 10;
+// Cargar timezone de configuración o usar default
+const TIMEZONE = "America/Bogota"; 
+
+setInterval(() => {
+    checkAndNotify();
+}, 60 * 1000); // Cada 60 segundos
+
+async function checkAndNotify() {
+    if (!messaging) return;
+
+    try {
+        // 1. Obtener hora local
+        const now = new Date();
+        const formatter = new Intl.DateTimeFormat("en-US", {
+            timeZone: TIMEZONE,
+            hour: 'numeric',
+            minute: 'numeric',
+            hour12: false
+        });
+        
+        const parts = formatter.formatToParts(now);
+        const hour = parseInt(parts.find(p => p.type === 'hour').value);
+        const minute = parseInt(parts.find(p => p.type === 'minute').value);
+        
+        // Convertir hora actual a minutos del día
+        const currentMinutes = hour * 60 + minute;
+
+        // 2. Obtener horario
+        const schedule = getTodaySchedule();
+        if (!schedule || !schedule.blocks) return;
+
+        // 3. Revisar bloques
+        schedule.blocks.forEach(async (block, index) => {
+            const [startH, startM] = block.start.split(':').map(Number);
+            const [endH, endM] = block.end.split(':').map(Number);
+            
+            const startMinutes = startH * 60 + startM;
+            const endMinutes = endH * 60 + endM;
+            
+            const isFirstBlock = index === 0;
+
+            // --- EVENTOS DE INICIO ---
+            
+            // A. Notificación Previa (10 min antes de iniciar)
+            if (startMinutes - currentMinutes === PRE_NOTIFICATION_MINUTES) {
+                console.log(`⏰ Pre-aviso inicio: ${block.entity}`);
+                await sendBroadcast(
+                    `Próximo turno: ${block.entity}`,
+                    `En ${PRE_NOTIFICATION_MINUTES} min inicia labores en ${block.entity} (${block.start})`
+                );
+            }
+
+            // B. Notificación de Inicio (Hora exacta)
+            if (startMinutes - currentMinutes === 0) {
+                console.log(`⏰ Inicio turno: ${block.entity}`);
+                const title = isFirstBlock ? "☀️ ¡Buen día! Inicio de Jornada" : `▶️ Inicia turno: ${block.entity}`;
+                await sendBroadcast(
+                    title,
+                    `Es hora de comenzar en ${block.entity} (${block.start})`
+                );
+            }
+
+            // --- EVENTOS DE FIN ---
+
+            // C. Notificación Previa (10 min antes de finalizar)
+            if (endMinutes - currentMinutes === PRE_NOTIFICATION_MINUTES) {
+                console.log(`⏰ Pre-aviso fin: ${block.entity}`);
+                await sendBroadcast(
+                    `Por finalizar: ${block.entity}`,
+                    `En ${PRE_NOTIFICATION_MINUTES} min termina el bloque de ${block.entity}`
+                );
+            }
+
+            // D. Notificación de Fin (Hora exacta)
+            if (endMinutes - currentMinutes === 0) {
+                console.log(`⏰ Fin turno: ${block.entity}`);
+                await sendBroadcast(
+                    `⏹️ Finaliza turno: ${block.entity}`,
+                    `Has completado el bloque de ${block.entity} (${block.end})`
+                );
+            }
+        });
+
+    } catch (err) {
+        console.error("Error en checkAndNotify:", err);
+    }
+}
+
+async function sendBroadcast(title, body) {
+    const data = loadData();
+    const tokens = data.devices.map(d => d.token);
+    
+    if (tokens.length === 0) return;
+
+    // Filtrar duplicados si los hubiera
+    const uniqueTokens = [...new Set(tokens)];
+    
+    console.log(`Enviando notificación a ${uniqueTokens.length} dispositivos...`);
+
+    const message = {
+        notification: { title, body },
+        tokens: uniqueTokens
+    };
+
+    try {
+        const response = await messaging.sendEachForMulticast(message);
+        console.log(`${response.successCount} notificaciones enviadas exitosamente.`);
+        if (response.failureCount > 0) {
+            console.log('Fallaron algunas notificaciones:', response.responses);
+        }
+    } catch (error) {
+        console.error('Error enviando broadcast:', error);
+    }
+}
+
+
+
 // Arrancar servidor
 app.listen(PORT, () => {
     console.log(`Backend horarios-pwa-backend escuchando en puerto ${PORT}`);
