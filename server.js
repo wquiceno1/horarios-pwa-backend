@@ -255,18 +255,25 @@ async function checkAndNotify() {
     if (!messaging) return;
 
     try {
-        // 1. Obtener hora local
+        // 1. Obtener hora local y día de la semana
         const now = new Date();
         const formatter = new Intl.DateTimeFormat("en-US", {
             timeZone: TIMEZONE,
             hour: 'numeric',
             minute: 'numeric',
+            weekday: 'long',
             hour12: false
         });
         
         const parts = formatter.formatToParts(now);
         const hour = parseInt(parts.find(p => p.type === 'hour').value);
         const minute = parseInt(parts.find(p => p.type === 'minute').value);
+        const weekday = parts.find(p => p.type === 'weekday').value;
+
+        // Validar fin de semana (No enviar notificaciones sábados ni domingos)
+        if (weekday === 'Saturday' || weekday === 'Sunday') {
+            return;
+        }
         
         // Convertir hora actual a minutos del día
         const currentMinutes = hour * 60 + minute;
