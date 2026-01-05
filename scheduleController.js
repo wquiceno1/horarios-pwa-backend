@@ -80,6 +80,52 @@ function getCurrentSeason() {
     }
 }
 
+// Obtener detalles del próximo cambio de horario
+function getNextSeasonChange() {
+    const data = getSchedules();
+    if (!data) return null;
+
+    const config = data.config.seasons.summer_chile;
+    const today = new Date();
+    const currentYear = today.getFullYear();
+
+    // Fechas clave de este año y el siguiente
+    const endOfSummerThisYear = getNthWeekdayOfMonth(currentYear, config.rule_end.month, config.rule_end.weekday, config.rule_end.occurrence);
+    const startOfSummerThisYear = getNthWeekdayOfMonth(currentYear, config.rule_start.month, config.rule_start.weekday, config.rule_start.occurrence);
+    const endOfSummerNextYear = getNthWeekdayOfMonth(currentYear + 1, config.rule_end.month, config.rule_end.weekday, config.rule_end.occurrence);
+
+    // Configurar horas a 0 para comparar solo fechas
+    const todayTime = today.setHours(0,0,0,0);
+    const endSummerThisYearTime = endOfSummerThisYear.setHours(0,0,0,0);
+    const startSummerThisYearTime = startOfSummerThisYear.setHours(0,0,0,0);
+
+    let nextChangeDate;
+    let nextSeasonName;
+
+    if (todayTime < endSummerThisYearTime) {
+        // Enero - Abril (Verano) -> Próximo: Invierno
+        nextChangeDate = endOfSummerThisYear;
+        nextSeasonName = "Invierno Chile (Abril - Septiembre)";
+    } else if (todayTime >= endSummerThisYearTime && todayTime < startSummerThisYearTime) {
+        // Abril - Septiembre (Invierno) -> Próximo: Verano
+        nextChangeDate = startOfSummerThisYear;
+        nextSeasonName = "Verano Chile (Septiembre - Abril)";
+    } else {
+        // Septiembre - Diciembre (Verano) -> Próximo: Invierno (del siguiente año)
+        nextChangeDate = endOfSummerNextYear;
+        nextSeasonName = "Invierno Chile (Abril - Septiembre)";
+    }
+
+    const diffTime = Math.abs(nextChangeDate - today);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+    return {
+        date: nextChangeDate,
+        daysRemaining: diffDays,
+        nextSeasonName: nextSeasonName
+    };
+}
+
 // Obtener el horario para el día de hoy
 export function getTodaySchedule() {
     const data = getSchedules();
@@ -88,6 +134,7 @@ export function getTodaySchedule() {
     const seasonKey = getCurrentSeason();
     const seasonConfig = data.schedules[seasonKey];
     const seasonInfo = data.config.seasons[seasonKey];
+    const nextChange = getNextSeasonChange();
 
     const today = new Date();
     const dayOfWeek = today.getDay(); // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
@@ -103,17 +150,14 @@ export function getTodaySchedule() {
         blocks = seasonConfig.friday;
     } else {
         dayType = "weekend";
-        blocks = []; // Fin de semana libre
+        // Fin de semana (sin horario laboral definido por defecto)
     }
 
     return {
-        date: today.toLocaleDateString("es-CO"),
-        season: {
-            key: seasonKey,
-            name: seasonInfo.name,
-            description: seasonInfo.description
-        },
-        dayType: dayType,
-        blocks: blocks
+        date: today.toISOString().split('T')[0],
+        season: seasonInfo,
+        nextSeasonChange: nextChange,
+        dayType,
+        blocks
     };
 }
