@@ -240,6 +240,21 @@ app.get("/api/debug/send-last", async (req, res) => {
     }
 });
 
+// GET /api/debug/devices
+// Ver lista de dispositivos registrados
+app.get("/api/debug/devices", (req, res) => {
+    const data = loadData();
+    res.json({
+        ok: true,
+        count: data.devices.length,
+        devices: data.devices.map(d => ({
+            userAgent: d.userAgent,
+            updatedAt: d.updatedAt,
+            tokenPrefix: d.token.substring(0, 10) + "..."
+        }))
+    });
+});
+
 
 // --- CRON JOB / INTERVALO PARA NOTIFICACIONES ---
 // Chequear cada minuto eventos de horario
