@@ -12,11 +12,12 @@ const DATA_PATH = path.join(__dirname, "data", "notifications.json");
 const serviceAccountPath = path.join(__dirname, "firebase-service-account.json");
 
 let messaging;
+let db;
 
 try {
     let serviceAccount;
     
-    // 1. Intentar cargar desde variable de entorno (Producción/Railway)
+    // 1. Intentar cargar desde variable de entorno (Producción/Railway/Vercel)
     if (process.env.FIREBASE_SERVICE_ACCOUNT) {
         try {
             serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
@@ -33,45 +34,20 @@ try {
     }
 
     if (serviceAccount) {
-        admin.initializeApp({
-            credential: admin.credential.cert(serviceAccount)
-        });
+        // Evitar inicializar múltiples veces
+        if (!admin.apps.length) {
+            admin.initializeApp({
+                credential: admin.credential.cert(serviceAccount)
+            });
+        }
         messaging = admin.messaging();
-        console.log("Firebase Admin inicializado correctamente.");
+        db = admin.firestore();
+        console.log("Firebase Admin (Messaging + Firestore) inicializado correctamente.");
     } else {
-        console.warn("ADVERTENCIA: No se encontraron credenciales (ni ENV ni archivo). El envío fallará.");
+        console.warn("ADVERTENCIA: No se encontraron credenciales. El envío fallará.");
     }
 } catch (error) {
     console.error("Error inicializando Firebase Admin:", error);
-}
-
-// --- Utilidades de JSON (sync y simples para MVP) ---
-function loadData() {
-    try {
-        if (!fs.existsSync(DATA_PATH)) {
-            // Asegurar que el directorio existe
-            const dir = path.dirname(DATA_PATH);
-            if (!fs.existsSync(dir)) {
-                fs.mkdirSync(dir, { recursive: true });
-            }
-            // Crear archivo por defecto
-            const defaultData = { devices: [], notifications: [] };
-            fs.writeFileSync(DATA_PATH, JSON.stringify(defaultData, null, 2), "utf8");
-            return defaultData;
-        }
-        const raw = fs.readFileSync(DATA_PATH, "utf8");
-        return JSON.parse(raw);
-    } catch (err) {
-        console.error("Error leyendo JSON, usando estructura vacía:", err);
-        return {
-            devices: [],
-            notifications: []
-        };
-    }
-}
-
-function saveData(data) {
-    fs.writeFileSync(DATA_PATH, JSON.stringify(data, null, 2), "utf8");
 }
 
 // --- Express app ---
@@ -116,36 +92,42 @@ app.get("/api/health", (req, res) => {
 
 // POST /api/save-token
 // body: { token: string, userAgent?: string }
-app.post("/api/save-token", (req, res) => {
+app.post("/api/save-token", async (req, res) => {
     const { token, userAgent } = req.body;
 
     if (!token) {
         return res.status(400).json({ error: "Token es obligatorio" });
     }
 
-    const data = loadData();
-    
-    // Verificar si ya existe
-    const existingIndex = data.devices.findIndex(d => d.token === token);
-    
-    if (existingIndex >= 0) {
-        // Actualizar timestamp
-        data.devices[existingIndex].updatedAt = new Date().toISOString();
-        if (userAgent) data.devices[existingIndex].userAgent = userAgent;
-        console.log("Token actualizado:", token.substring(0, 20) + "...");
-    } else {
-        // Nuevo dispositivo
-        data.devices.push({
-            token,
-            userAgent: userAgent || "unknown",
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-        });
-        console.log("Nuevo token guardado:", token.substring(0, 20) + "...");
+    if (!db) {
+        return res.status(503).json({ error: "Base de datos no disponible" });
     }
 
-    saveData(data);
-    res.json({ ok: true, message: "Token guardado correctamente" });
+    try {
+        const deviceRef = db.collection('devices').doc(token);
+        const doc = await deviceRef.get();
+        
+        if (doc.exists) {
+            await deviceRef.update({ 
+                updatedAt: new Date().toISOString(),
+                userAgent: userAgent || doc.data().userAgent 
+            });
+            console.log("Token actualizado (Firestore):", token.substring(0, 20) + "...");
+        } else {
+            await deviceRef.set({
+                token,
+                userAgent: userAgent || "unknown",
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            });
+            console.log("Nuevo token guardado (Firestore):", token.substring(0, 20) + "...");
+        }
+
+        res.json({ ok: true, message: "Token guardado correctamente" });
+    } catch (error) {
+        console.error("Error guardando token en Firestore:", error);
+        res.status(500).json({ error: "Error guardando token" });
+    }
 });
 
 // GET /api/schedule/today
@@ -208,29 +190,30 @@ app.post("/api/test-notification", async (req, res) => {
 // GET /api/debug/send-last
 // Envía notificación al dispositivo más recientemente actualizado
 app.get("/api/debug/send-last", async (req, res) => {
-    if (!messaging) {
+    if (!messaging || !db) {
         return res.status(503).json({ error: "Firebase no inicializado" });
     }
     
-    const data = loadData();
-    if (!data.devices || data.devices.length === 0) {
-        return res.status(404).json({ error: "No hay dispositivos registrados" });
-    }
-
-    // Buscar el más reciente
-    const lastDevice = data.devices.sort((a, b) => 
-        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-    )[0];
-
-    const message = {
-        token: lastDevice.token,
-        notification: {
-            title: "Prueba de Integración",
-            body: `Hola! Esta notificación confirma que el flujo Backend -> Firebase -> PWA funciona. Hora: ${new Date().toLocaleTimeString()}`
-        }
-    };
-
     try {
+        const snapshot = await db.collection('devices')
+            .orderBy('updatedAt', 'desc')
+            .limit(1)
+            .get();
+
+        if (snapshot.empty) {
+            return res.status(404).json({ error: "No hay dispositivos registrados" });
+        }
+
+        const lastDevice = snapshot.docs[0].data();
+
+        const message = {
+            token: lastDevice.token,
+            notification: {
+                title: "Prueba de Integración",
+                body: `Hola! Esta notificación confirma que el flujo Backend -> Firebase -> PWA funciona. Hora: ${new Date().toLocaleTimeString()}`
+            }
+        };
+
         const response = await messaging.send(message);
         console.log("Notificación enviada a último dispositivo:", response);
         res.json({ ok: true, messageId: response, target: lastDevice.token.substring(0, 10) + "..." });
@@ -242,29 +225,42 @@ app.get("/api/debug/send-last", async (req, res) => {
 
 // GET /api/debug/devices
 // Ver lista de dispositivos registrados
-app.get("/api/debug/devices", (req, res) => {
-    const data = loadData();
-    res.json({
-        ok: true,
-        count: data.devices.length,
-        devices: data.devices.map(d => ({
-            userAgent: d.userAgent,
-            updatedAt: d.updatedAt,
-            tokenPrefix: d.token.substring(0, 10) + "..."
-        }))
-    });
+app.get("/api/debug/devices", async (req, res) => {
+    if (!db) return res.status(503).json({ error: "DB no disponible" });
+    
+    try {
+        const snapshot = await db.collection('devices').get();
+        const devices = snapshot.docs.map(doc => doc.data());
+        
+        res.json({
+            ok: true,
+            count: devices.length,
+            devices: devices.map(d => ({
+                userAgent: d.userAgent,
+                updatedAt: d.updatedAt,
+                tokenPrefix: d.token.substring(0, 10) + "..."
+            }))
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
 });
 
 
-// --- CRON JOB / INTERVALO PARA NOTIFICACIONES ---
-// Chequear cada minuto eventos de horario
+// --- CRON JOB (Vercel) ---
+// Chequear cada minuto eventos de horario.
+// Vercel llamará a este endpoint.
 const PRE_NOTIFICATION_MINUTES = 10;
-// Cargar timezone de configuración o usar default
 const TIMEZONE = "America/Bogota"; 
 
-setInterval(() => {
-    checkAndNotify();
-}, 60 * 1000); // Cada 60 segundos
+app.get("/api/cron", async (req, res) => {
+    // Validar autorización si es necesario (ej: header secreto)
+    // if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) { ... }
+    
+    console.log("Ejecutando CRON JOB...");
+    await checkAndNotify();
+    res.json({ ok: true, timestamp: new Date().toISOString() });
+});
 
 async function checkAndNotify() {
     if (!messaging) return;
@@ -287,6 +283,7 @@ async function checkAndNotify() {
 
         // Validar fin de semana (No enviar notificaciones sábados ni domingos)
         if (weekday === 'Saturday' || weekday === 'Sunday') {
+            console.log("Fin de semana, saltando notificaciones.");
             return;
         }
         
@@ -297,8 +294,11 @@ async function checkAndNotify() {
         const schedule = getTodaySchedule();
         if (!schedule || !schedule.blocks) return;
 
+        console.log(`Chequeando horario ${hour}:${minute} (${currentMinutes} min) - ${schedule.blocks.length} bloques`);
+
         // 3. Revisar bloques
-        schedule.blocks.forEach(async (block, index) => {
+        // Usamos for...of para poder usar await correctamente si fuera necesario
+        for (const [index, block] of schedule.blocks.entries()) {
             const [startH, startM] = block.start.split(':').map(Number);
             const [endH, endM] = block.end.split(':').map(Number);
             
@@ -357,7 +357,7 @@ async function checkAndNotify() {
                     `Has completado el bloque de ${block.entity} (${endTime12})`
                 );
             }
-        });
+        }
 
     } catch (err) {
         console.error("Error en checkAndNotify:", err);
@@ -365,22 +365,24 @@ async function checkAndNotify() {
 }
 
 async function sendBroadcast(title, body) {
-    const data = loadData();
-    const tokens = data.devices.map(d => d.token);
-    
-    if (tokens.length === 0) return;
-
-    // Filtrar duplicados si los hubiera
-    const uniqueTokens = [...new Set(tokens)];
-    
-    console.log(`Enviando notificación a ${uniqueTokens.length} dispositivos...`);
-
-    const message = {
-        notification: { title, body },
-        tokens: uniqueTokens
-    };
+    if (!db) return;
 
     try {
+        const snapshot = await db.collection('devices').get();
+        const tokens = snapshot.docs.map(doc => doc.data().token);
+        
+        if (tokens.length === 0) return;
+
+        // Filtrar duplicados si los hubiera
+        const uniqueTokens = [...new Set(tokens)];
+        
+        console.log(`Enviando notificación a ${uniqueTokens.length} dispositivos...`);
+    
+        const message = {
+            notification: { title, body },
+            tokens: uniqueTokens
+        };
+    
         const response = await messaging.sendEachForMulticast(message);
         console.log(`${response.successCount} notificaciones enviadas exitosamente.`);
         if (response.failureCount > 0) {
@@ -393,7 +395,12 @@ async function sendBroadcast(title, body) {
 
 
 
-// Arrancar servidor
-app.listen(PORT, () => {
-    console.log(`Backend horarios-pwa-backend escuchando en puerto ${PORT}`);
-});
+// Arrancar servidor solo si no estamos en Vercel (o para desarrollo local)
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, () => {
+        console.log(`Backend horarios-pwa-backend escuchando en puerto ${PORT}`);
+    });
+}
+
+// Exportar para Vercel
+export default app;
