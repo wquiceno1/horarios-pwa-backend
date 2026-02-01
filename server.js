@@ -58,7 +58,8 @@ const PORT = process.env.PORT || 3000;
 const whitelist = [
     "http://localhost:3000",
     "http://127.0.0.1:5500", // VS Code Live Server
-    "https://wquiceno1.github.io" // GitHub Pages
+    "https://wquiceno1.github.io", // GitHub Pages
+    "https://horarios-pwa.vercel.app" // Vercel Frontend
 ];
 
 const corsOptions = {
@@ -66,7 +67,8 @@ const corsOptions = {
         // Permitir peticiones sin origen (como apps móviles o curl)
         if (!origin) return callback(null, true);
         
-        if (whitelist.indexOf(origin) !== -1 || origin.includes("github.io")) {
+        // Permitir whitelist y cualquier subdominio de vercel.app (para previews)
+        if (whitelist.indexOf(origin) !== -1 || origin.includes("github.io") || origin.endsWith(".vercel.app")) {
             callback(null, true);
         } else {
             console.warn("Bloqueado por CORS:", origin);
