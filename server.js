@@ -220,6 +220,25 @@ app.post("/api/test-notification", async (req, res) => {
     }
 });
 
+// POST /api/debug/broadcast
+// Envía una notificación de prueba a TODOS los dispositivos
+app.post("/api/debug/broadcast", async (req, res) => {
+    const { title, body } = req.body;
+    
+    console.log("Iniciando Broadcast Manual...");
+    
+    try {
+        await sendBroadcast(
+            title || "🔔 Prueba General",
+            body || "Esta es una prueba enviada a todos los dispositivos registrados."
+        );
+        res.json({ ok: true, message: "Broadcast enviado" });
+    } catch (err) {
+        console.error("Error en broadcast manual:", err);
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
 // GET /api/debug/send-last
 // Envía notificación al dispositivo más recientemente actualizado
 app.get("/api/debug/send-last", async (req, res) => {
