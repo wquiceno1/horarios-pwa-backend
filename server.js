@@ -132,6 +132,25 @@ app.post("/api/save-token", async (req, res) => {
     }
 });
 
+// POST /api/check-token
+// Verifica si un token ya existe en la BD
+app.post("/api/check-token", async (req, res) => {
+    const { token } = req.body;
+    if (!token || !db) return res.status(400).json({ ok: false });
+
+    try {
+        const doc = await db.collection('devices').doc(token).get();
+        if (doc.exists) {
+            res.json({ ok: true, exists: true });
+        } else {
+            res.json({ ok: true, exists: false });
+        }
+    } catch (err) {
+        console.error("Error verificando token:", err);
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
 // GET /api/schedule/today
 // Devuelve el horario calculado para el día actual
 app.get("/api/schedule/today", (req, res) => {
