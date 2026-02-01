@@ -170,6 +170,18 @@ app.post("/api/test-notification", async (req, res) => {
         notification: {
             title: title || "Prueba Horarios PWA",
             body: body || "Notificación de prueba desde el backend"
+        },
+        android: {
+            priority: "high",
+            notification: {
+                priority: "max",
+                defaultSound: true
+            }
+        },
+        webpush: {
+            headers: {
+                Urgency: "high"
+            }
         }
     };
 
@@ -248,6 +260,33 @@ app.get("/api/debug/devices", async (req, res) => {
     }
 });
 
+
+// DELETE /api/debug/devices
+// Borra todos los dispositivos registrados (para reiniciar pruebas)
+app.delete("/api/debug/devices", async (req, res) => {
+    if (!db) return res.status(503).json({ error: "DB no disponible" });
+
+    try {
+        const snapshot = await db.collection('devices').get();
+        
+        if (snapshot.empty) {
+            return res.json({ ok: true, message: "No había dispositivos para borrar." });
+        }
+
+        const batch = db.batch();
+        snapshot.docs.forEach((doc) => {
+            batch.delete(doc.ref);
+        });
+
+        await batch.commit();
+        console.log(`Purgados ${snapshot.size} dispositivos.`);
+        
+        res.json({ ok: true, message: `Se eliminaron ${snapshot.size} dispositivos.` });
+    } catch (error) {
+        console.error("Error purgando dispositivos:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // --- CRON JOB (Vercel) ---
 // Chequear cada minuto eventos de horario.
