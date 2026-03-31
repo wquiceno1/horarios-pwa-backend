@@ -14,40 +14,43 @@ const serviceAccountPath = path.join(__dirname, "firebase-service-account.json")
 let messaging;
 let db;
 
-try {
-    let serviceAccount;
-    
-    // 1. Intentar cargar desde variable de entorno (Producción/Railway/Vercel)
-    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-        try {
-            serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-            console.log("Cargando credenciales desde variable de entorno...");
-        } catch (e) {
-            console.error("Error parseando FIREBASE_SERVICE_ACCOUNT:", e);
-        }
-    }
-    
-    // 2. Si no hay variable, intentar cargar archivo local (Desarrollo)
-    if (!serviceAccount && fs.existsSync(serviceAccountPath)) {
-        serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf8"));
-        console.log("Cargando credenciales desde archivo local...");
-    }
+function ensureFirebase() {
+    if (messaging && db) return;
 
-    if (serviceAccount) {
-        // Evitar inicializar múltiples veces
+    try {
+        let serviceAccount;
+
+        if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+            try {
+                serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+                console.log("Cargando credenciales desde variable de entorno...");
+            } catch (e) {
+                console.error("Error parseando FIREBASE_SERVICE_ACCOUNT:", e);
+            }
+        }
+
+        if (!serviceAccount && fs.existsSync(serviceAccountPath)) {
+            serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf8"));
+            console.log("Cargando credenciales desde archivo local...");
+        }
+
+        if (!serviceAccount) {
+            console.warn("ADVERTENCIA: No se encontraron credenciales. El envío fallará.");
+            return;
+        }
+
         if (!admin.apps.length) {
             admin.initializeApp({
                 credential: admin.credential.cert(serviceAccount)
             });
         }
+
         messaging = admin.messaging();
         db = admin.firestore();
         console.log("Firebase Admin (Messaging + Firestore) inicializado correctamente.");
-    } else {
-        console.warn("ADVERTENCIA: No se encontraron credenciales. El envío fallará.");
+    } catch (error) {
+        console.error("Error inicializando Firebase Admin:", error);
     }
-} catch (error) {
-    console.error("Error inicializando Firebase Admin:", error);
 }
 
 // --- Express app ---
@@ -95,6 +98,7 @@ app.get("/api/health", (req, res) => {
 // POST /api/save-token
 // body: { token: string, userAgent?: string }
 app.post("/api/save-token", async (req, res) => {
+    ensureFirebase();
     const { token, userAgent } = req.body;
 
     if (!token) {
@@ -135,6 +139,7 @@ app.post("/api/save-token", async (req, res) => {
 // POST /api/check-token
 // Verifica si un token ya existe en la BD
 app.post("/api/check-token", async (req, res) => {
+    ensureFirebase();
     const { token } = req.body;
     if (!token || !db) return res.status(400).json({ ok: false });
 
@@ -166,6 +171,7 @@ app.get("/api/schedule/today", (req, res) => {
 // POST /api/test-notification
 // body: { fcmToken: string, title?: string, body?: string }
 app.post("/api/test-notification", async (req, res) => {
+    ensureFirebase();
     const {
         fcmToken,
         title,
@@ -242,6 +248,7 @@ app.post("/api/debug/broadcast", async (req, res) => {
 // GET /api/debug/send-last
 // Envía notificación al dispositivo más recientemente actualizado
 app.get("/api/debug/send-last", async (req, res) => {
+    ensureFirebase();
     if (!messaging || !db) {
         return res.status(503).json({ error: "Firebase no inicializado" });
     }
@@ -278,6 +285,7 @@ app.get("/api/debug/send-last", async (req, res) => {
 // GET /api/debug/devices
 // Ver lista de dispositivos registrados
 app.get("/api/debug/devices", async (req, res) => {
+    ensureFirebase();
     if (!db) return res.status(503).json({ error: "DB no disponible" });
     
     try {
@@ -302,6 +310,7 @@ app.get("/api/debug/devices", async (req, res) => {
 // DELETE /api/debug/devices
 // Borra todos los dispositivos registrados (para reiniciar pruebas)
 app.delete("/api/debug/devices", async (req, res) => {
+    ensureFirebase();
     if (!db) return res.status(503).json({ error: "DB no disponible" });
 
     try {
@@ -333,6 +342,7 @@ const PRE_NOTIFICATION_MINUTES = 10;
 const TIMEZONE = "America/Bogota"; 
 
 app.get("/api/cron", async (req, res) => {
+    ensureFirebase();
     // Validar autorización si es necesario (ej: header secreto)
     // if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) { ... }
     
@@ -444,7 +454,8 @@ async function checkAndNotify() {
 }
 
 async function sendBroadcast(title, body) {
-    if (!db) return;
+    ensureFirebase();
+    if (!db || !messaging) return;
 
     try {
         const snapshot = await db.collection('devices').get();
